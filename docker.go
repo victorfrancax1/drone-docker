@@ -37,6 +37,17 @@ type (
 		Config   string // Docker Auth Config
 	}
 
+	// Trust defines Docker trust parameters.
+	Trust struct {
+		Signing              bool   // Image signing is enabled
+		NotaryServer         string // Notary server address
+		RootPassphrase       string // Notary root key passphrase
+		RepoPassphrase       string // Notary repo key passphrase
+		RootPrivateKey       string // Notary root private key
+		DelegationPrivateKey string // Notary delegation private key
+		DelegationPublicKey  string // Notary delegation public key
+	}
+
 	// Build defines Docker build parameters.
 	Build struct {
 		Remote      string   // Git remote URL
@@ -63,6 +74,7 @@ type (
 	Plugin struct {
 		Login   Login  // Docker login configuration
 		Build   Build  // Docker build configuration
+		Trust   Trust  // Docker trust configuration
 		Daemon  Daemon // Docker daemon configuration
 		Dryrun  bool   // Docker push is skipped
 		Cleanup bool   // Docker purge is enabled
@@ -119,6 +131,42 @@ func (p Plugin) Exec() error {
 	if p.Build.Squash && !p.Daemon.Experimental {
 		fmt.Println("Squash build flag is only available when Docker deamon is started with experimental flag. Ignoring...")
 		p.Build.Squash = false
+	}
+
+	// load keys for image signing
+	if p.Trust.Signing {
+		os.Setenv("DOCKER_CONTENT_TRUST", "1")
+		os.Setenv("DOCKER_CONTENT_TRUST_SERVER", p.Trust.NotaryServer)
+		os.Setenv("DOCKER_CONTENT_TRUST_ROOT_PASSPHRASE", p.Trust.RootPassphrase)
+		os.Setenv("DOCKER_CONTENT_TRUST_REPOSITORY_PASSPHRASE", p.Trust.RepoPassphrase)
+
+		cmd := commandTrustKeyLoad(p.Trust.RootPrivateKey, "root")
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		trace(cmd)
+		err := cmd.Run()
+		if err != nil {
+			return fmt.Errorf("Error loading root key: %s", err)
+		}
+
+		cmd = commandTrustKeyLoad(p.Trust.DelegationPrivateKey, "drone")
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		trace(cmd)
+		err = cmd.Run()
+
+		if err != nil {
+			return fmt.Errorf("Error loading delegation key :%s", err)
+		}
+
+		cmd = commandTrustSignerAdd(p.Build, p.Trust, "drone")
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		trace(cmd)
+		err = cmd.Run()
+		if err != nil {
+			return fmt.Errorf("Error adding signer for repo :%s", err)
+		}
 	}
 
 	// add proxy build args
@@ -179,6 +227,25 @@ func commandLogin(login Login) *exec.Cmd {
 		"-u", login.Username,
 		"-p", login.Password,
 		login.Registry,
+	)
+}
+
+// helper function to create the docker trust key load command
+func commandTrustKeyLoad(keyPath string, keyName string) *exec.Cmd {
+	return exec.Command(
+		dockerExe, "trust", "key", "load",
+		"--name", keyName,
+		keyPath,
+	)
+}
+
+// helper function to create the docker trust signer add command
+func commandTrustSignerAdd(build Build, trust Trust, keyName string) *exec.Cmd {
+	return exec.Command(
+		dockerExe, "trust", "signer", "add",
+		"--key", trust.DelegationPublicKey,
+		keyName,
+		build.Repo,
 	)
 }
 

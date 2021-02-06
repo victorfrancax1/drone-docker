@@ -238,6 +238,41 @@ func main() {
 			Usage:  "additional host:IP mapping",
 			EnvVar: "PLUGIN_ADD_HOST",
 		},
+		cli.BoolFlag{
+			Name:   "signing.on",
+			Usage:  "turn signing on",
+			EnvVar: "PLUGIN_SIGNING_ON",
+		},
+		cli.StringFlag{
+			Name:   "signing.notary-server",
+			Usage:  "notary server url",
+			EnvVar: "PLUGIN_SIGNING_NOTARY_SERVER",
+		},
+		cli.StringFlag{
+			Name:   "signing.root-passphrase",
+			Usage:  "signing root key passphrase",
+			EnvVar: "PLUGIN_SIGNING_ROOT_PASSPHRASE",
+		},
+		cli.StringFlag{
+			Name:   "signing.repo-passphrase",
+			Usage:  "signing repo key passphrase",
+			EnvVar: "PLUGIN_SIGNING_REPO_PASSPHRASE",
+		},
+		cli.StringFlag{
+			Name:   "signing.rootprivkey",
+			Usage:  "signing root private key",
+			EnvVar: "PLUGIN_SIGNING_ROOT_PRIV_KEY",
+		},
+		cli.StringFlag{
+			Name:   "signing.delegationprivkey",
+			Usage:  "signing delegation private key",
+			EnvVar: "PLUGIN_SIGNING_DELEGATION_PRIV_KEY",
+		},
+		cli.StringFlag{
+			Name:   "signing.delegationpubkey",
+			Usage:  "signing delegation public key",
+			EnvVar: "PLUGIN_SIGNING_DELEGATION_PUB_KEY",
+		},
 	}
 
 	if err := app.Run(os.Args); err != nil {
@@ -255,6 +290,15 @@ func run(c *cli.Context) error {
 			Password: c.String("docker.password"),
 			Email:    c.String("docker.email"),
 			Config:   c.String("docker.config"),
+		},
+		Trust: docker.Trust{
+			Signing:              c.Bool("signing.on"),
+			NotaryServer:         c.String("signing.notary-server"),
+			RootPassphrase:       c.String("signing.root-passphrase"),
+			RepoPassphrase:       c.String("signing.repo-passphrase"),
+			RootPrivateKey:       c.String("signing.rootprivkey"),
+			DelegationPrivateKey: c.String("signing.delegationprivkey"),
+			DelegationPublicKey:  c.String("signing.delegationpubkey"),
 		},
 		Build: docker.Build{
 			Remote:      c.String("remote.url"),
