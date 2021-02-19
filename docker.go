@@ -3,6 +3,7 @@ package docker
 import (
 	"fmt"
 	"io/ioutil"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -41,6 +42,7 @@ type (
 	Trust struct {
 		Signing              bool   // Image signing is enabled
 		NotaryServer         string // Notary server address
+		NotaryCertificate    string // Notary certificate
 		RootPassphrase       string // Notary root key passphrase
 		RepoPassphrase       string // Notary repo key passphrase
 		RootPrivateKey       string // Notary root private key
@@ -140,11 +142,25 @@ func (p Plugin) Exec() error {
 		os.Setenv("DOCKER_CONTENT_TRUST_ROOT_PASSPHRASE", p.Trust.RootPassphrase)
 		os.Setenv("DOCKER_CONTENT_TRUST_REPOSITORY_PASSPHRASE", p.Trust.RepoPassphrase)
 
+		notaryServer, err := url.Parse(p.Trust.NotaryServer)
+		if err != nil {
+			return fmt.Errorf("Error parsing Notary server URL: %s", err)
+		}
+
+		notaryDockerHome := filepath.Join(dockerHomeTls, notaryServer.Host)
+		os.MkdirAll(notaryDockerHome, 0600)
+
+		path := filepath.Join(notaryDockerHome, "server.crt")
+		err = ioutil.WriteFile(path, []byte(p.Trust.NotaryCertificate), 0600)
+		if err != nil {
+			return fmt.Errorf("Error writing server.crt: %s", err)
+		}
+
 		cmd := commandTrustKeyLoad(p.Trust.RootPrivateKey, "root")
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		trace(cmd)
-		err := cmd.Run()
+		err = cmd.Run()
 		if err != nil {
 			return fmt.Errorf("Error loading root key: %s", err)
 		}

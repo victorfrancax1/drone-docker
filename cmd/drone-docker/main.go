@@ -249,6 +249,11 @@ func main() {
 			EnvVar: "PLUGIN_SIGNING_NOTARY_SERVER",
 		},
 		cli.StringFlag{
+			Name:   "signing.notary-certificate",
+			Usage:  "notary server url",
+			EnvVar: "PLUGIN_SIGNING_NOTARY_CERT",
+		},
+		cli.StringFlag{
 			Name:   "signing.root-passphrase",
 			Usage:  "signing root key passphrase",
 			EnvVar: "PLUGIN_SIGNING_ROOT_PASSPHRASE",
