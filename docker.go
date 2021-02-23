@@ -137,11 +137,17 @@ func (p Plugin) Exec() error {
 
 	// load keys for image signing
 	if p.Trust.Signing {
-		os.Setenv("DOCKER_CONTENT_TRUST", "1")
-		os.Setenv("DOCKER_CONTENT_TRUST_SERVER", p.Trust.NotaryServer)
-		os.Setenv("DOCKER_CONTENT_TRUST_ROOT_PASSPHRASE", p.Trust.RootPassphrase)
-		os.Setenv("DOCKER_CONTENT_TRUST_REPOSITORY_PASSPHRASE", p.Trust.RepoPassphrase)
 
+		// building content trust environment
+		contentTrustEnv := append(
+			os.Environ(),
+			"DOCKER_CONTENT_TRUST=1",
+			fmt.Sprintf("%s=%s", "DOCKER_CONTENT_TRUST_SERVER", p.Trust.NotaryServer),
+			fmt.Sprintf("%s=%s", "DOCKER_CONTENT_TRUST_ROOT_PASSPHRASE", p.Trust.NotaryServer),
+			fmt.Sprintf("%s=%s", "DOCKER_CONTENT_TRUST_REPOSITORY_PASSPHRASE", p.Trust.NotaryServer),
+		)
+
+		// configuring notary's certificate
 		notaryServer, err := url.Parse(p.Trust.NotaryServer)
 		if err != nil {
 			return fmt.Errorf("Error parsing Notary server URL: %s", err)
@@ -159,6 +165,7 @@ func (p Plugin) Exec() error {
 		cmd := commandTrustKeyLoad(p.Trust.RootPrivateKey, "root")
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
+		cmd.Env = contentTrustEnv
 		trace(cmd)
 		err = cmd.Run()
 		if err != nil {
@@ -168,6 +175,7 @@ func (p Plugin) Exec() error {
 		cmd = commandTrustKeyLoad(p.Trust.DelegationPrivateKey, "drone")
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
+		cmd.Env = contentTrustEnv
 		trace(cmd)
 		err = cmd.Run()
 
@@ -175,14 +183,29 @@ func (p Plugin) Exec() error {
 			return fmt.Errorf("Error loading delegation key :%s", err)
 		}
 
-		cmd = commandTrustSignerAdd(p.Build, p.Trust, "drone")
-		cmd.Stdout = os.Stdout
+		isSignerEnabled := true
+		cmd = commandTrustInspect(p.Build)
+		cmd.Env = contentTrustEnv
 		cmd.Stderr = os.Stderr
+		cmd.Stdout = os.Stdout
 		trace(cmd)
-		err = cmd.Run()
-		if err != nil {
-			return fmt.Errorf("Error adding signer for repo :%s", err)
+		if err := cmd.Run(); err != nil {
+			if _, ok := err.(*exec.ExitError); ok {
+				isSignerEnabled = false
+			}
 		}
+
+		if !isSignerEnabled {
+			cmd = commandTrustSignerAdd(p.Build, p.Trust, "drone")
+			cmd.Stdout = os.Stdout
+			cmd.Stderr = os.Stderr
+			trace(cmd)
+			err = cmd.Run()
+			if err != nil {
+				return fmt.Errorf("Error adding signer for repo :%s", err)
+			}
+		}
+
 	}
 
 	// add proxy build args
@@ -261,6 +284,14 @@ func commandTrustSignerAdd(build Build, trust Trust, keyName string) *exec.Cmd {
 		dockerExe, "trust", "signer", "add",
 		"--key", trust.DelegationPublicKey,
 		keyName,
+		build.Repo,
+	)
+}
+
+// helper function to create the docker trust inspect command
+func commandTrustInspect(build Build) *exec.Cmd {
+	return exec.Command(
+		dockerExe, "trust", "inspect",
 		build.Repo,
 	)
 }
