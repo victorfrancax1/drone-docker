@@ -243,6 +243,11 @@ func main() {
 			Usage:  "turn signing on",
 			EnvVar: "PLUGIN_SIGNING_ON",
 		},
+		cli.BoolFlag{
+			Name:   "signing.on-build",
+			Usage:  "turn signing on for docker build (default is only on push)",
+			EnvVar: "PLUGIN_SIGNING_ON_BUILD",
+		},
 		cli.StringFlag{
 			Name:   "signing.notary-server",
 			Usage:  "notary server url",
@@ -298,6 +303,7 @@ func run(c *cli.Context) error {
 		},
 		Trust: docker.Trust{
 			Signing:              c.Bool("signing.on"),
+			SigningOnBuild:       c.Bool("signing.on-build"),
 			NotaryServer:         c.String("signing.notary-server"),
 			RootPassphrase:       c.String("signing.root-passphrase"),
 			RepoPassphrase:       c.String("signing.repo-passphrase"),

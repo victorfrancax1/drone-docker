@@ -41,6 +41,7 @@ type (
 	// Trust defines Docker trust parameters.
 	Trust struct {
 		Signing              bool   // Image signing is enabled
+		SigningOnBuild       bool   // Image signing is enabled on docker build (default is only on push)
 		NotaryServer         string // Notary server address
 		NotaryCertificate    string // Notary certificate
 		RootPassphrase       string // Notary root key passphrase
@@ -136,15 +137,16 @@ func (p Plugin) Exec() error {
 	}
 
 	// load keys for image signing
+	var contentTrustEnv []string
 	if p.Trust.Signing {
 
 		// building content trust environment
-		contentTrustEnv := append(
+		contentTrustEnv = append(
 			os.Environ(),
 			"DOCKER_CONTENT_TRUST=1",
 			fmt.Sprintf("%s=%s", "DOCKER_CONTENT_TRUST_SERVER", p.Trust.NotaryServer),
-			fmt.Sprintf("%s=%s", "DOCKER_CONTENT_TRUST_ROOT_PASSPHRASE", p.Trust.NotaryServer),
-			fmt.Sprintf("%s=%s", "DOCKER_CONTENT_TRUST_REPOSITORY_PASSPHRASE", p.Trust.NotaryServer),
+			fmt.Sprintf("%s=%s", "DOCKER_CONTENT_TRUST_ROOT_PASSPHRASE", p.Trust.RootPassphrase),
+			fmt.Sprintf("%s=%s", "DOCKER_CONTENT_TRUST_REPOSITORY_PASSPHRASE", p.Trust.RepoPassphrase),
 		)
 
 		// configuring notary's certificate
@@ -195,9 +197,10 @@ func (p Plugin) Exec() error {
 			}
 		}
 
-		if !isSignerEnabled {
+		if isSignerEnabled == false {
 			cmd = commandTrustSignerAdd(p.Build, p.Trust, "drone")
 			cmd.Stdout = os.Stdout
+			cmd.Env = contentTrustEnv
 			cmd.Stderr = os.Stderr
 			trace(cmd)
 			err = cmd.Run()
@@ -220,13 +223,21 @@ func (p Plugin) Exec() error {
 		cmds = append(cmds, commandPull(img))
 	}
 
-	cmds = append(cmds, commandBuild(p.Build)) // docker build
+	buildCmd := commandBuild(p.Build)
+	if p.Trust.Signing == true && p.Trust.SigningOnBuild == true {
+		buildCmd.Env = contentTrustEnv
+	}
+	cmds = append(cmds, buildCmd) // docker build
 
 	for _, tag := range p.Build.Tags {
 		cmds = append(cmds, commandTag(p.Build, tag)) // docker tag
 
 		if p.Dryrun == false {
-			cmds = append(cmds, commandPush(p.Build, tag)) // docker push
+			pushCmd := commandPush(p.Build, tag)
+			if p.Trust.Signing == true {
+				pushCmd.Env = contentTrustEnv
+			}
+			cmds = append(cmds, pushCmd) // docker push
 		}
 	}
 
